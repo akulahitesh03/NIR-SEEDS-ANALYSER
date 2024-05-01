@@ -1,0 +1,138 @@
+#include "AS726X.h"
+
+AS726X sensor;
+bool refFlag = false;
+bool testFlag = false;
+bool avgFlag = false;
+bool refTriggered = false;
+bool testTriggered = false;
+bool avgTriggered = false;
+float refValues[6];
+float testValues[6];
+float percent = 0;
+
+int refUpdateCount = 0;
+int testUpdateCount = 0;
+int percentUpdateCount = 0;
+
+void setup() {
+  Wire.begin();
+  Serial.begin(115200);
+  sensor.begin();
+  
+  Serial.println("System Ready, Perform NIR Test!!");
+}
+
+void loop() {
+  sensor.takeMeasurements();
+
+  // Check if D8 is high
+  if (digitalRead(8) == LOW && !refTriggered) {
+    unsigned long startTime = millis();
+    while (digitalRead(8) == LOW && (millis() - startTime < 300)) {
+      sensor.takeMeasurements();
+    }
+    if (millis() - startTime >= 300) {
+      updateRefValues();
+    }
+    refTriggered = true;
+  } else if (digitalRead(8) == LOW) {
+    refTriggered = false;
+  }
+
+  // Check if D9 is high
+  if (digitalRead(9) == LOW && !testTriggered) {
+    unsigned long startTime = millis();
+    while (digitalRead(9) == LOW && (millis() - startTime < 300)) {
+      sensor.takeMeasurements();
+    }
+    if (millis() - startTime >= 300) {
+      updateTestValues();
+    }
+    testTriggered = true;
+  } else if (digitalRead(9) == LOW) {
+    testTriggered = false;
+  }
+
+  // Check if D10 is high
+  if (digitalRead(10) == LOW && !avgTriggered) {
+    unsigned long startTime = millis();
+    while (digitalRead(10) == LOW && (millis() - startTime < 300)) {
+      sensor.takeMeasurements();
+    }
+    if (millis() - startTime >= 300) {
+      calculatePercent();
+    }
+    avgTriggered = true;
+  } else if (digitalRead(10) == LOW) {
+    avgTriggered = false;
+  }
+}
+
+// Function to update REF values
+void updateRefValues() {
+  storeValues(refValues);
+  printValues("REF", refValues);
+  refFlag = true;
+  refUpdateCount++;
+  printUpdateCount("REF", refUpdateCount);
+}
+
+// Function to update TEST values
+void updateTestValues() {
+  storeValues(testValues);
+  printValues("TEST", testValues);
+  testFlag = true;
+  testUpdateCount++;
+  printUpdateCount("TEST", testUpdateCount);
+}
+
+// Function to calculate PERCENT
+void calculatePercent() {
+  percent = calculateAverageVariation(refValues, testValues);
+  if (isnan(percent) || isinf(percent)) {
+    Serial.println("Perform REF/TEST");
+  } else {
+    Serial.print("Average Variation: ");
+    Serial.println(percent);
+    avgFlag = true;
+    percentUpdateCount++;
+    printUpdateCount("PERCENT", percentUpdateCount);
+  }
+}
+
+// Function to store the sensor values
+void storeValues(float *values) {
+  values[0] = sensor.getCalibratedR();
+  values[1] = sensor.getCalibratedS();
+  values[2] = sensor.getCalibratedT();
+  values[3] = sensor.getCalibratedU();
+  values[4] = sensor.getCalibratedV();
+  values[5] = sensor.getCalibratedW();
+}
+
+// Function to print the sensor values
+void printValues(String label, float *values) {
+  Serial.print(label + " Reading: ");
+  for (int i = 0; i < 6; i++) {
+    Serial.print(values[i], 2);
+    Serial.print(" ");
+  }
+  Serial.println();
+}
+
+// Function to print the update count
+void printUpdateCount(String label, int count) {
+  Serial.print("Update ");
+  Serial.print(count);
+  Serial.println(" for " + label);
+}
+
+// Function to calculate the average variation percentage
+float calculateAverageVariation(float *refValues, float *testValues) {
+  float totalVariation = 0;
+  for (int i = 0; i < 6; i++) {
+    totalVariation += ((testValues[i] - refValues[i]) / refValues[i]) * 100;
+  }
+  return totalVariation / 6;
+}
